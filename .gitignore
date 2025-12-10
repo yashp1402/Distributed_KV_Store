@@ -1,0 +1,17 @@
+# Binaries
+bin/
+server
+client
+
+# Persistence Logs (Do not commit data!)
+*.wal
+
+# AWS Keys (CRITICAL SECURITY)
+*.pem
+
+# Mac System Files
+.DS_Store
+
+# IDE Settings
+.idea/
+.vscode/

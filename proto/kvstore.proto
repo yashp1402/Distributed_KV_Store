@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package kvstore;
+
+// go_package tells protoc where to place the generated Go code.
+// It should match the module path which we use in our Go code.
+option go_package = "github.com/yashp1402/distributed-kv-store/proto";
+
+// KVStore defines both:
+//   1. The client-facing key/value API (Get, Put, Delete)
+//   2. The internal Paxos-based consensus and replication RPCs
+//      (Prepare, Accept, Decided, CatchUp).
+//
+// In a typical deployment:
+//   - Clients only call Get/Put/Delete.
+//   - KV nodes call Prepare/Accept/Decided/CatchUp on each other
+//     to agree on log entries and keep replicas in sync.
+// 
+// Prepare is the first phase of Paxos:
+//   - A proposer (usually the shard leader) asks acceptors for permission
+//     to propose a value with a given proposal number for a given log index.
+//   - Acceptors respond with a promise and any already-accepted value.
+// Accept is the second phase of Paxos:
+//   - After a successful Prepare, the proposer sends an Accept request
+//     with a concrete value (log entry) and proposal number.
+//   - Acceptors "vote" by accepting the value, unless they have already
+//     promised to a higher-numbered proposal.
+// For CatchUp, A node sends its local commit index to a peer; the peer responds with
+// the entries the requester is missing so it can:
+//   - update its log
+//   - apply any missed operations
+//   - bring its key/value state up to date.
+service KVStore {
+  // Get: Reads the current value for the given key from the distributed KV store.
+  rpc Get(GetArgs) returns (GetReply);
+
+  // Put writes a value for the given key into the distributed KV store.
+  rpc Put(PutArgs) returns (PutReply);
+
+  // Delete removes the entry for the given key, if present.
+  rpc Delete(DeleteArgs) returns (DeleteReply);
+
+  // This is used to ensure that only one value can eventually win
+  // for a given log slot, even with retries and competing proposers.
+  rpc Prepare(PrepareArgs) returns (PrepareReply);
+
+  // When a majority of acceptors accept a value for a log index,
+  // that value is chosen and cannot be changed.
+  rpc Accept(AcceptArgs) returns (AcceptReply);
+
+  // Decided is used to notify peers that a value for a given log index
+  // has been chosen (committed) by Paxos.
+  rpc Decided(DecidedArgs) returns (DecidedReply);
+
+  // CatchUp allows a lagging replica to fetch missing committed log entries.
+  rpc CatchUp(CatchUpArgs) returns (CatchUpReply);
+}
+
+// The Args carry the current data
+// Reply is used to notify whether the data is received or not.
+
+message GetArgs {
+  string key = 1;
+}
+
+message GetReply {
+  string value = 1;
+  bool found = 2;
+  string leader_hint = 3; 
+}
+
+message PutArgs {
+  string key = 1;
+  string value = 2;
+  string client_id = 3; 
+  int64 request_id = 4; 
+}
+
+message PutReply {
+  bool success = 1;
+  string leader_hint = 2;
+}
+
+message DeleteArgs {
+  string key = 1;
+  string client_id = 2;
+  int64 request_id = 3;
+}
+
+message DeleteReply {
+  bool success = 1;
+  string leader_hint = 2;
+}
+
+message PrepareArgs {
+  int64 proposal_number = 1; 
+  int64 seq = 2;         
+}
+
+message PrepareReply {
+  int64 highest_proposal = 1; 
+  bool success = 2;
+  string val_already_accepted = 3;
+}
+
+message AcceptArgs {
+  int64 proposal_number = 1;
+  int64 seq = 2;
+  string value = 3;
+}
+
+message AcceptReply {
+  int64 highest_proposal = 1;
+  bool success = 2;
+}
+
+message DecidedArgs {
+  int64 seq = 1;
+  string value = 2;
+}
+
+message DecidedReply {
+  bool success = 1;
+}
+
+message CatchUpArgs {
+  int64 local_commit_index = 1;
+}
+
+message CatchUpReply {
+  map<int64, string> missing_entries = 1; 
+}
+// To build :-
+// protoc --go_out=. --go_opt=paths=source_relative \
+//        --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+//        proto/kvstore.proto
