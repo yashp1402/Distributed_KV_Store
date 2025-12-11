@@ -1,7 +1,5 @@
 # Binaries
 bin/
-server
-client
 
 # Persistence Logs (Do not commit data!)
 *.wal
